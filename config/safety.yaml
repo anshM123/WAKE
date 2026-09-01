@@ -9,4 +9,9 @@ minimum_battery_v: null     # REQUIRED: battery-specific validation
 return_battery_v: null      # REQUIRED: battery-specific validation
 max_pose_age_ms: 100.0
 max_telemetry_age_ms: 100.0
+max_clock_age_ms: 3000.0
 command_timeout_ms: 250.0
+reaction_time_s: 0.25
+maximum_deceleration_mps2: null # REQUIRED: experimentally measured
+drone_radius_m: null            # REQUIRED: measured with guards/props
+detection_recall_min: 0.95

@@ -4,15 +4,25 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wake-mapper"
-version = "0.2.0"
+version = "0.3.0"
 description = "Research platform for propeller-wake-based probabilistic room mapping"
 requires-python = ">=3.10"
-dependencies = ["numpy>=1.26,<3", "PyYAML>=6,<7"]
+dependencies = ["numpy>=1.26,<3", "scipy>=1.12,<2", "PyYAML>=6,<7"]
 
 [project.optional-dependencies]
 vision = ["opencv-contrib-python>=4.9,<5"]
 science = ["scipy>=1.12,<2", "scikit-learn>=1.4,<2", "matplotlib>=3.8,<4"]
+ui = ["PySide6>=6.7,<7", "pyqtgraph>=0.13.7,<1", "PyOpenGL>=3.1.7,<4"]
 test = ["pytest>=8,<9"]
+all = [
+  "opencv-contrib-python>=4.9,<5",
+  "scikit-learn>=1.4,<2",
+  "matplotlib>=3.8,<4",
+  "PySide6>=6.7,<7",
+  "pyqtgraph>=0.13.7,<1",
+  "PyOpenGL>=3.1.7,<4",
+  "pytest>=8,<9",
+]
 
 [project.scripts]
 wake = "wake.cli:main"

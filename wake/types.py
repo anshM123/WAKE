@@ -21,7 +21,7 @@ class Frame(str, Enum):
     """
     WORLD = "WORLD"
     CAMERA = "CAMERA"
-    APRILTAG = "APRILTAG"
+    TAG = "TAG"
     DRONE_BODY = "DRONE_BODY"
     FC_BODY = "FC_BODY"
 
@@ -59,6 +59,11 @@ class TelemetrySample:
     validity: Validity = Validity.ALL
     packet_age_ms: float = 0.0
     protocol_version: int = 2
+    imu_timestamp_us: int | None = None
+    motors_timestamp_us: int | None = None
+    attitude_timestamp_us: int | None = None
+    battery_timestamp_us: int | None = None
+    host_timestamp_ns: int | None = None
 
     def __post_init__(self) -> None:
         if not self.drone_id: raise ValueError("drone_id is required")
@@ -69,6 +74,10 @@ class TelemetrySample:
         object.__setattr__(self, "attitude_rpy_rad", _finite_tuple(self.attitude_rpy_rad, 3, "attitude_rpy_rad"))
         object.__setattr__(self, "motors", _finite_tuple(self.motors, 4, "motors"))
         if not math.isfinite(self.battery_v) or self.battery_v < 0: raise ValueError("battery_v must be nonnegative and finite")
+        for name in ("imu_timestamp_us", "motors_timestamp_us", "attitude_timestamp_us", "battery_timestamp_us"):
+            value = getattr(self, name)
+            if value is not None and value < 0:
+                raise ValueError(f"{name} must be nonnegative")
 
 
 @dataclass(frozen=True)

@@ -18,7 +18,18 @@ def telemetry_from_mapping(message: dict[str, Any], received_ns: int | None = No
         accel_body_g=message["accel_body_g"], gyro_body=message["gyro_body"],
         attitude_rpy_rad=message["attitude_rpy_rad"], motors=message["motors"],
         battery_v=float(message["battery_v"]), validity=Validity(int(message["validity"])),
-        packet_age_ms=float(message.get("packet_age_ms", 0.0)), protocol_version=PROTOCOL_VERSION)
+        packet_age_ms=float(message.get("packet_age_ms", 0.0)),
+        protocol_version=PROTOCOL_VERSION,
+        imu_timestamp_us=_optional_int(message, "imu_timestamp_us"),
+        motors_timestamp_us=_optional_int(message, "motors_timestamp_us"),
+        attitude_timestamp_us=_optional_int(message, "attitude_timestamp_us"),
+        battery_timestamp_us=_optional_int(message, "battery_timestamp_us"),
+    )
+
+
+def _optional_int(message: dict[str, Any], key: str) -> int | None:
+    value = message.get(key)
+    return None if value is None else int(value)
 
 def decode_telemetry(payload: bytes, received_ns: int | None = None) -> TelemetrySample:
     if len(payload) > 4096: raise ValueError("telemetry packet exceeds 4096 bytes")

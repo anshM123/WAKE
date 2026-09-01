@@ -11,6 +11,11 @@ AUTONOMY_REQUIRED = (
     "minimum_battery_v", "return_battery_v",
 )
 
+VALID_MODES = {
+    "BENCH", "RECORD_ONLY", "CALIBRATION_FREE_AIR", "CALIBRATION_WALL",
+    "REPLAY", "MAPPING_MANUAL_FLIGHT", "SIMULATION", "AUTONOMOUS",
+}
+
 def load_yaml(path: str | Path) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as handle:
         value = yaml.safe_load(handle)
@@ -25,7 +30,10 @@ def validate_autonomy(wake_cfg: dict[str, Any], safety_cfg: dict[str, Any]) -> l
     reasons: list[str] = []
     if wake_cfg.get("mode") != "AUTONOMOUS": reasons.append("mode is not AUTONOMOUS")
     if not wake_cfg.get("control", {}).get("matrix_high_level_interface_verified", False): reasons.append("Matrix high-level interface is unverified")
+    if not wake_cfg.get("control", {}).get("manual_mapping_validated", False): reasons.append("manual mapping is not validated")
     if wake_cfg.get("models", {}).get("free_air_path") is None: reasons.append("free-air model is UNCALIBRATED")
     if wake_cfg.get("models", {}).get("surface_path") is None: reasons.append("surface model is UNCALIBRATED")
     reasons.extend(f"safety.{key} is a calibration placeholder" for key in AUTONOMY_REQUIRED if safety_cfg.get(key) is None)
+    if safety_cfg.get("maximum_deceleration_mps2") is None: reasons.append("maximum deceleration is unmeasured")
+    if safety_cfg.get("drone_radius_m") is None: reasons.append("drone radius is unconfigured")
     return reasons

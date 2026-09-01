@@ -1,21 +1,29 @@
-version: 2
-mode: RECORD_ONLY  # BENCH, RECORD_ONLY, CALIBRATION, REPLAY, MAPPING_MANUAL_FLIGHT, AUTONOMOUS
+version: 3
+mode: RECORD_ONLY
 drone_id: wake-01
 network:
   bind: 0.0.0.0
   telemetry_port: 5005
   pose_port: 5006
+  command_port: 5007
 synchronization:
-  max_pose_gap_ms: 50.0  # CALIBRATION_PLACEHOLDER
-  max_pose_age_ms: 100.0 # CALIBRATION_PLACEHOLDER
+  max_pose_gap_ms: 50.0
+  max_pose_age_ms: 100.0
+  max_clock_model_age_ms: 3000.0
+  clock_max_rtt_ms: 30.0
 mapping:
-  voxel_size_m: 0.075
+  voxel_size_m: 0.05
   log_odds_min: -4.0
   log_odds_max: 4.0
   occupied_threshold: 0.7
+  plane_min_confidence: 0.60
+  snapshot_interval_s: 10.0
 models:
   free_air_path: null
   surface_path: null
+estimation:
+  temporal_window_s: 0.35
+  persistence_s: 0.10
 filtering:
   low_pass_alpha: 0.25
   high_pass_enabled: false
@@ -25,3 +33,9 @@ recording:
   queue_size: 10000
 control:
   matrix_high_level_interface_verified: false
+  manual_mapping_validated: false
+ui:
+  enabled: true
+  update_hz: 15.0
+  occupancy_threshold: 0.55
+  confidence_threshold: 0.10
