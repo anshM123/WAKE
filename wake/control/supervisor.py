@@ -21,10 +21,16 @@ class SafetySupervisor:
         if health.pose_age_ms>self.config["max_pose_age_ms"]:return SafetyDecision(SafetyAction.HOLD,"pose stale")
         if health.telemetry_age_ms>self.config["max_telemetry_age_ms"]:return SafetyDecision(SafetyAction.HOLD,"telemetry stale")
         if self.config.get("require_tag") and not health.tag_visible:return SafetyDecision(SafetyAction.HOLD,"TAG_LOST")
-        if self.config.get("require_clock_sync") and (health.clock_model_age_ms>self.config["max_clock_age_ms"] or health.clock_sync_confidence<=0):return SafetyDecision(SafetyAction.HOLD,"CLOCK_UNSYNCED")
+        if self.config.get("require_clock_sync"):
+            if health.clock_model_age_ms>self.config["max_clock_age_ms"]:return SafetyDecision(SafetyAction.HOLD,"CLOCK_MODEL_STALE")
+            if health.clock_sync_confidence<self.config.get("minimum_clock_confidence",.5):return SafetyDecision(SafetyAction.HOLD,"CLOCK_CONFIDENCE_LOW")
+            if health.clock_residual_ms>self.config.get("maximum_clock_residual_ms",float("inf")):return SafetyDecision(SafetyAction.HOLD,"CLOCK_RESIDUAL_HIGH")
         if not health.model_calibrated:return SafetyDecision(SafetyAction.HOLD,"surface model UNCALIBRATED")
         if self.config.get("require_operational_envelope") and not health.model_in_operational_envelope:return SafetyDecision(SafetyAction.HOLD,"MODEL_OUT_OF_ENVELOPE")
-        if model_validation is not None and model_validation.get("held_out_obstacle_recall",0)<self.config.get("detection_recall_min",1):return SafetyDecision(SafetyAction.HOLD,"detection-envelope recall below requirement")
+        if model_validation is not None:
+            caution=self.config.get("caution_distance_m");bins=model_validation.get("recall_by_distance",[]);candidates=[] if caution is None else [item for item in bins if float(item["max_distance_m"])>=caution]
+            recall=None if not candidates else float(min(candidates,key=lambda item:float(item["max_distance_m"]))["recall"])
+            if recall is None or recall<self.config.get("detection_recall_min",1):return SafetyDecision(SafetyAction.HOLD,"safety-zone obstacle recall below requirement")
         minimum=self.config.get("minimum_battery_v");reserve=self.config.get("return_battery_v")
         if minimum is not None and health.battery_v<=minimum:return SafetyDecision(SafetyAction.LAND,"battery below landing threshold")
         if reserve is not None and health.battery_v<=reserve:return SafetyDecision(SafetyAction.RETURN_HOME,"battery reserve reached")

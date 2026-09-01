@@ -47,10 +47,11 @@ class SurfaceArtifact:
     angular_sigma_rad: float
     dataset_ids: list[str]
     split_session_ids: dict[str, list[str]]
-    validation_metrics: dict[str, float]
+    validation_metrics: dict[str, object]
     configuration_hash: str
     operational_min: list[float]
     operational_max: list[float]
+    direction_weights: list[list[float]] | None = None
 
 
 def _sigmoid(value: np.ndarray | float) -> np.ndarray | float:
@@ -66,6 +67,7 @@ class CalibratedSurfaceModel(SurfaceModel):
     @classmethod
     def load(cls, path: str | Path) -> "CalibratedSurfaceModel":
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        raw.setdefault("direction_weights",raw.get("normal_weights"))
         return cls(SurfaceArtifact(**raw))
 
     def estimate(self, residual: AerodynamicResidual) -> SurfaceEstimate | None:
@@ -79,14 +81,14 @@ class CalibratedSurfaceModel(SurfaceModel):
             return None
         distance = max(.01, float(x @ np.asarray(self.artifact.distance_weights)))
         normal = x @ np.asarray(self.artifact.normal_weights)
-        norm = float(np.linalg.norm(normal))
-        if norm < 1e-9:
+        direction=x@np.asarray(self.artifact.direction_weights or self.artifact.normal_weights);norm=float(np.linalg.norm(normal));direction_norm=float(np.linalg.norm(direction))
+        if norm < 1e-9 or direction_norm<1e-9:
             return None
         confidence = probability * (1.0 if self.last_in_envelope else .1)
-        return SurfaceEstimate(probability, distance, tuple((normal / norm).tolist()), self.artifact.distance_sigma_m, self.artifact.angular_sigma_rad, confidence, True)
+        return SurfaceEstimate(probability, distance, tuple((normal / norm).tolist()), self.artifact.distance_sigma_m, self.artifact.angular_sigma_rad, confidence, True,direction_body=tuple((direction/direction_norm).tolist()))
 
 
-def train_surface_model(features: np.ndarray, nearby: np.ndarray, distances: np.ndarray, normals: np.ndarray, *, validation: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray], dataset_ids: list[str], split_session_ids: dict[str, list[str]], configuration_hash: str) -> SurfaceArtifact:
+def train_surface_model(features: np.ndarray, nearby: np.ndarray, distances: np.ndarray, directions:np.ndarray,normals: np.ndarray, *, validation: tuple[np.ndarray, np.ndarray, np.ndarray,np.ndarray, np.ndarray], dataset_ids: list[str], split_session_ids: dict[str, list[str]], configuration_hash: str) -> SurfaceArtifact:
     x = np.asarray(features, float); y = np.asarray(nearby, float)
     mean, scale = x.mean(axis=0), x.std(axis=0); scale[scale < 1e-9] = 1
     design = np.column_stack([(x - mean) / scale, np.ones(len(x))])
@@ -99,15 +101,20 @@ def train_surface_model(features: np.ndarray, nearby: np.ndarray, distances: np.
     positive = y > .5
     distance_weights, *_ = np.linalg.lstsq(design[positive], np.asarray(distances)[positive], rcond=None)
     normal_weights, *_ = np.linalg.lstsq(design[positive], np.asarray(normals)[positive], rcond=None)
-    vx, vy, vd, vn = validation
+    direction_weights,*_=np.linalg.lstsq(design[positive],np.asarray(directions)[positive],rcond=None)
+    vx, vy, vd,vdir, vn = validation
     vdesign = np.column_stack([(np.asarray(vx)-mean)/scale, np.ones(len(vx))]); probability = _sigmoid(vdesign@classifier); predicted = probability >= .5
     true = np.asarray(vy)>.5; tp=np.sum(predicted&true);fp=np.sum(predicted&~true);fn=np.sum(~predicted&true);tn=np.sum(~predicted&~true)
     positive_validation = true
     distance_prediction = vdesign[positive_validation]@distance_weights; distance_error=distance_prediction-np.asarray(vd)[positive_validation]
     normal_prediction = vdesign[positive_validation]@normal_weights; normal_prediction/=np.linalg.norm(normal_prediction,axis=1,keepdims=True);true_normals=np.asarray(vn)[positive_validation];angles=np.arccos(np.clip(np.sum(normal_prediction*true_normals,axis=1),-1,1))
-    metrics={"precision":float(tp/max(1,tp+fp)),"recall":float(tp/max(1,tp+fn)),"false_positive_rate":float(fp/max(1,fp+tn)),"distance_mae_m":float(np.mean(np.abs(distance_error))),"distance_p90_m":float(np.percentile(np.abs(distance_error),90)),"normal_mae_deg":float(np.degrees(np.mean(angles))),"held_out_obstacle_recall":float(tp/max(1,tp+fn))}
+    direction_prediction=vdesign[positive_validation]@direction_weights;direction_prediction/=np.linalg.norm(direction_prediction,axis=1,keepdims=True);true_directions=np.asarray(vdir)[positive_validation];direction_angles=np.arccos(np.clip(np.sum(direction_prediction*true_directions,axis=1),-1,1));positive_distances=np.asarray(vd)[positive_validation];recall_by_distance=[]
+    for threshold in sorted(set([.15,.25,.35,.5,.75,1.,1.5])):
+        inside=true&(np.asarray(vd)<=threshold);count=int(np.sum(inside))
+        if count:recall_by_distance.append({"max_distance_m":threshold,"sample_count":count,"recall":float(np.sum(predicted&inside)/count)})
+    metrics={"precision":float(tp/max(1,tp+fp)),"recall":float(tp/max(1,tp+fn)),"false_positive_rate":float(fp/max(1,fp+tn)),"distance_mae_m":float(np.mean(np.abs(distance_error))),"distance_p90_m":float(np.percentile(np.abs(distance_error),90)),"normal_mae_deg":float(np.degrees(np.mean(angles))),"direction_mae_deg":float(np.degrees(np.mean(direction_angles))),"recall_by_distance":recall_by_distance}
     names=["accel_x","accel_y","accel_z","gyro_x","gyro_y","gyro_z","magnitude","rolling_rms","rolling_variance","persistence","low_energy","high_energy","motor_imbalance"]
-    return SurfaceArtifact("surface-linear-v1",datetime.now(timezone.utc).isoformat(),names,mean.tolist(),scale.tolist(),classifier.tolist(),distance_weights.tolist(),normal_weights.tolist(),float(max(.01,np.std(distance_error))),float(max(math.radians(1),np.std(angles))),dataset_ids,split_session_ids,metrics,configuration_hash,np.percentile(x,.5,axis=0).tolist(),np.percentile(x,99.5,axis=0).tolist())
+    return SurfaceArtifact("surface-linear-v2",datetime.now(timezone.utc).isoformat(),names,mean.tolist(),scale.tolist(),classifier.tolist(),distance_weights.tolist(),normal_weights.tolist(),float(max(.01,np.std(distance_error))),float(max(math.radians(1),np.std(direction_angles))),dataset_ids,split_session_ids,metrics,configuration_hash,np.percentile(x,.5,axis=0).tolist(),np.percentile(x,99.5,axis=0).tolist(),direction_weights.tolist())
 
 
 def save_surface_artifact(artifact: SurfaceArtifact, path: str | Path) -> Path:

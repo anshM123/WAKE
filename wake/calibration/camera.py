@@ -15,6 +15,7 @@ def calibrate_camera(*, device: int, width: int, height: int, output: str | Path
     capture = cv2.VideoCapture(device)
     capture.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     capture.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    capture.set(cv2.CAP_PROP_BUFFERSIZE,1)
     if not capture.isOpened():
         raise RuntimeError(f"NO_CAMERA: device {device}")
     object_template = np.zeros((rows * columns, 3), np.float32)

@@ -141,7 +141,7 @@ class LiveMapViewer:
             heading = position + rotation @ np.asarray([.25, 0, 0])
             self.heading_item.setData(pos=np.vstack([position, heading]))
             if snapshot.surface is not None:
-                endpoint = position + rotation @ np.asarray(snapshot.surface.normal_body) * snapshot.surface.distance_m
+                endpoint = position + rotation @ np.asarray(snapshot.surface.direction_body) * snapshot.surface.distance_m
                 self.surface_item.setData(pos=np.vstack([position, endpoint]))
             else:
                 self.surface_item.setData(pos=np.empty((0, 3)))
@@ -168,6 +168,7 @@ IMU: {h.imu_hz:.1f} Hz
 Pose: {h.pose_hz:.1f} Hz
 
 Clock RTT: {h.clock_sync_rtt_ms:.2f} ms
+Clock residual: {h.clock_residual_ms:.3f} ms
 Sync error: {h.sync_error_ms:.2f} ms
 
 Tag: {tag}

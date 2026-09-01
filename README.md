@@ -1,4 +1,4 @@
-# WAKE v0.3 experimental platform
+# WAKE v0.3.1 experimental platform
 
 WAKE tests whether a single microdrone can infer nearby geometry from
 disturbances in its own propeller wake. One ceiling AprilTag supplies global
@@ -87,6 +87,12 @@ WAKE saves the resolution, matrix, distortion, RMS error, timestamp, and camera
 identifier. Runtime rejects a different capture resolution and never accepts
 the checked-in null placeholder as calibration.
 
+The capture backend requests a one-frame buffer and timestamps immediately
+after `grab()`, before decoding with `retrieve()`. Camera exposure/transport
+latency is still hardware-specific: measure it experimentally and set
+`camera.capture_latency_ms`. WAKE subtracts that calibrated latency from frame
+timestamps and blocks autonomy while it remains null.
+
 ### 5 — Ceiling tag
 
 Use a matte, rigid, completely flat `tag36h11`, ID 0, whose physical detection
@@ -133,6 +139,8 @@ This displays RTT, host/XIAO offset, skew ppm, model age, fit residual, and
 confidence. Multiple consecutive healthy samples are required for
 `CLOCK SYNC GOOD`. All real-time host timestamps use `time.monotonic_ns()`;
 Unix time appears only in metadata.
+Runtime safety independently enforces `minimum_clock_confidence` and
+`maximum_clock_residual_ms`; passing only the age check is insufficient.
 
 ### 9 — Free-air sessions
 
@@ -181,8 +189,11 @@ wake evaluate-model models/surface.json
 ```
 
 The artifact contains detection precision/recall/FPR, distance MAE/P90, normal
-angular error, uncertainty, session splits, and operational envelope. Held-out
-recall inside the safety zone must pass policy; file existence is insufficient.
+and nearest-surface-direction angular errors, uncertainty, session splits, and
+operational envelope. Direction-to-surface and geometric surface normal are
+distinct outputs. Held-out recall is reported cumulatively by true distance;
+the bin covering the configured caution zone must pass policy. File existence
+or overall recall is insufficient.
 
 ### 13 — Replay
 
@@ -229,6 +240,11 @@ deceleration, latency, physical radius, battery reserve, and geofence. Only then
 should autonomous development continue. Required stop distance includes reaction
 time, command/network latency, braking distance, uncertainty, and drone radius;
 configuration cannot override it downward.
+
+Set `drone_radius_m` to the measured collision radius and
+`safe_corridor_padding_m` to validated extra clearance. Known-free return space
+is the full swept capsule between consecutive poses using their sum—not a fixed
+voxel cube. WAKE leaves the corridor unavailable while either value is null.
 
 ## Modes and commands
 

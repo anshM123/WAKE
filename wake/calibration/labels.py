@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import math
 import numpy as np
 from wake.pose.transforms import quaternion_to_matrix
 from pathlib import Path
@@ -13,8 +14,11 @@ class WorldPlane:
         if abs(np.linalg.norm(self.normal_world)-1)>.001:raise ValueError("plane normal must be unit length")
 
 def wall_label(pose:PoseSample,plane:WorldPlane)->tuple[float,Vec3]:
-    normal=np.asarray(plane.normal_world);signed=float(normal@np.asarray(pose.position_world_m)+plane.offset_m);normal_toward=normal*(-1 if signed>0 else 1);normal_body=quaternion_to_matrix(pose.rotation_world_from_body).T@normal_toward
-    return abs(signed),tuple(normal_body.tolist())
+    distance,direction,_=wall_geometry_label(pose,plane);return distance,direction
+
+def wall_geometry_label(pose:PoseSample,plane:WorldPlane)->tuple[float,Vec3,Vec3]:
+    normal=np.asarray(plane.normal_world);signed=float(normal@np.asarray(pose.position_world_m)+plane.offset_m);direction_world=-math.copysign(1.,signed)*normal;rotation_body_from_world=quaternion_to_matrix(pose.rotation_world_from_body).T;direction_body=rotation_body_from_world@direction_world;normal_body=rotation_body_from_world@normal
+    return abs(signed),tuple(direction_body.tolist()),tuple(normal_body.tolist())
 
 def plane_from_points(first:Vec3,second:Vec3,third:Vec3)->WorldPlane:
     a,b,c=np.asarray(first,float),np.asarray(second,float),np.asarray(third,float);normal=np.cross(b-a,c-a);length=float(np.linalg.norm(normal))

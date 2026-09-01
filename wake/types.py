@@ -125,6 +125,7 @@ class SurfaceEstimate:
     angular_sigma_rad: float
     confidence: float
     calibrated: bool = False
+    direction_body: Vec3 | None = None
 
     def __post_init__(self) -> None:
         for name in ("nearby_probability", "confidence"):
@@ -134,6 +135,10 @@ class SurfaceEstimate:
         norm = float(np.linalg.norm(normal))
         if norm < 1e-9: raise ValueError("normal_body cannot be zero")
         object.__setattr__(self, "normal_body", tuple((normal / norm).tolist()))
+        direction = normal if self.direction_body is None else np.asarray(_finite_tuple(self.direction_body, 3, "direction_body"))
+        direction_norm = float(np.linalg.norm(direction))
+        if direction_norm < 1e-9: raise ValueError("direction_body cannot be zero")
+        object.__setattr__(self, "direction_body", tuple((direction / direction_norm).tolist()))
 
 
 @dataclass
@@ -156,6 +161,7 @@ class SystemHealth:
     clock_sync_rtt_ms: float = math.inf
     clock_model_age_ms: float = math.inf
     clock_sync_confidence: float = 0.0
+    clock_residual_ms: float = math.inf
     synchronization_gap_ms: float = math.inf
     estimator_latency_ms: float = math.inf
     mapper_latency_ms: float = math.inf

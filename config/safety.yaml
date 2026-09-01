@@ -10,10 +10,13 @@ return_battery_v: null      # REQUIRED: battery-specific validation
 max_pose_age_ms: 100.0
 max_telemetry_age_ms: 100.0
 max_clock_age_ms: 3000.0
+minimum_clock_confidence: 0.50
+maximum_clock_residual_ms: 2.0 # Tune after clock-test measurements
 command_timeout_ms: 250.0
 reaction_time_s: 0.25
 maximum_deceleration_mps2: null # REQUIRED: experimentally measured
 drone_radius_m: null            # REQUIRED: measured with guards/props
+safe_corridor_padding_m: null   # REQUIRED: validated clearance beyond collision radius
 detection_recall_min: 0.95
 require_tag: true
 require_clock_sync: true

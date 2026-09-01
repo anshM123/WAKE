@@ -3,6 +3,8 @@ camera:
   width: 1280
   height: 720
   calibration_file: config/camera_intrinsics.yaml
+  buffer_size: 1
+  capture_latency_ms: null # REQUIRED: experimentally characterize this camera/backend
 tag:
   family: tag36h11
   id: 0

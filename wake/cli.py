@@ -13,9 +13,9 @@ import yaml
 
 from wake import __version__
 from wake.calibration.camera import calibrate_camera
-from wake.calibration.labels import WorldPlane, plane_from_points, save_reference_plane, wall_label
+from wake.calibration.labels import WorldPlane, plane_from_points, save_reference_plane, wall_geometry_label
 from wake.calibration.train import save_artifact, train_linear_free_air
-from wake.config import config_hash, load_yaml
+from wake.config import _distance_gated_recall,config_hash, load_yaml
 from wake.estimation.features import instantaneous_features
 from wake.estimation.motion import PoseMotionEstimator
 from wake.estimation.free_air import LearnedFreeAirModel
@@ -168,25 +168,29 @@ def _train_free_air(args) -> int:
 def _train_surface(args) -> int:
     cfg=load_yaml(args.config);free_air=LearnedFreeAirModel.load(args.free_air_model);plane_raw=load_yaml(args.plane)["reference_plane"];plane=WorldPlane(tuple(plane_raw["normal_world"]),float(plane_raw["offset_m"]));wall_paths=[Path(path) for path in args.wall_sessions];negative_paths=[Path(path) for path in args.negative_sessions];all_paths=wall_paths+negative_paths;wall_names={path.name for path in wall_paths};wall_split=split_sessions(wall_paths);negative_split=split_sessions(negative_paths);split=type(wall_split)(wall_split.train_session_ids+negative_split.train_session_ids,wall_split.validation_session_ids+negative_split.validation_session_ids,wall_split.test_session_ids+negative_split.test_session_ids);by_name={path.name:path for path in all_paths}
     def build(names):
-        all_features=[];nearby=[];distances=[];normals=[]
+        all_features=[];nearby=[];distances=[];directions=[];normals=[]
         for name in names:
             estimator=ResidualEstimator(cfg["filtering"]["persistence_samples"]);motion=PoseMotionEstimator();history=[]
             for row in load_synchronized_rows(by_name[name]):
                 base=instantaneous_features(row,motion.update(row.pose));history=(history+[base])[-10:];window=np.asarray(history);features=np.concatenate([window[-1],window.mean(0),window.std(0),window[-1]-window[0]]);expected=free_air.predict(features);observed=np.asarray([*row.telemetry.accel_body_g,*row.telemetry.gyro_body]);residual=estimator.calculate(observed,expected,np.asarray(row.telemetry.motors));all_features.append(residual_feature_vector(residual))
                 if name in wall_names:
-                    distance,normal=wall_label(row.pose,plane);is_near=distance<=args.maximum_wall_distance_m
-                else:distance,normal,is_near=args.maximum_wall_distance_m,(1.,0.,0.),False
-                nearby.append(float(is_near));distances.append(distance);normals.append(normal)
-        return np.asarray(all_features),np.asarray(nearby),np.asarray(distances),np.asarray(normals)
+                    distance,direction,normal=wall_geometry_label(row.pose,plane);is_near=distance<=args.maximum_wall_distance_m
+                else:distance,direction,normal,is_near=args.maximum_wall_distance_m,(1.,0.,0.),(1.,0.,0.),False
+                nearby.append(float(is_near));distances.append(distance);directions.append(direction);normals.append(normal)
+        return np.asarray(all_features),np.asarray(nearby),np.asarray(distances),np.asarray(directions),np.asarray(normals)
     train=build(split.train_session_ids);validation=build(split.validation_session_ids);artifact=train_surface_model(*train,validation=validation,dataset_ids=[p.name for p in all_paths],split_session_ids=asdict(split),configuration_hash=config_hash(cfg,plane_raw));save_surface_artifact(artifact,args.output);print(json.dumps(artifact.validation_metrics,indent=2));return 0
 
 
 def _evaluate_model(args) -> int:
-    raw=json.loads(Path(args.artifact).read_text());metrics=raw.get("validation_metrics",{});print(json.dumps(metrics,indent=2));scope=metrics.get("validation_scope");recall=metrics.get("held_out_obstacle_recall");acceptable=(scope=="held-out-sessions") or (recall is not None and recall>=load_yaml("config/safety.yaml")["detection_recall_min"]);print("AUTONOMY MODEL GATE: PASS" if acceptable else "AUTONOMY MODEL GATE: BLOCKED");return 0 if acceptable else 2
+    raw=json.loads(Path(args.artifact).read_text());metrics=raw.get("validation_metrics",{});print(json.dumps(metrics,indent=2));scope=metrics.get("validation_scope");safety=load_yaml("config/safety.yaml")
+    if "recall_by_distance" in metrics:
+        recall=_distance_gated_recall(metrics,safety.get("caution_distance_m"));acceptable=recall is not None and recall>=safety["detection_recall_min"];detail="caution-zone recall unavailable" if recall is None else f"caution-zone recall {recall:.3f}"
+    else:acceptable=scope=="held-out-sessions";detail=str(scope)
+    print(("AUTONOMY MODEL GATE: PASS — " if acceptable else "AUTONOMY MODEL GATE: BLOCKED — ")+detail);return 0 if acceptable else 2
 
 
 def _replay(args) -> int:
-    result=ReplayPipeline(args.session,load_yaml(args.config)).run(args.output,args.speed);print(json.dumps({**asdict(result),"output_path":str(result.output_path)},indent=2));return 0
+    config=load_yaml(args.config);config["safety"]=load_yaml("config/safety.yaml");result=ReplayPipeline(args.session,config).run(args.output,args.speed);print(json.dumps({**asdict(result),"output_path":str(result.output_path)},indent=2));return 0
 
 
 def _load_voxel_map(path:str|Path)->SparseVoxelMap:

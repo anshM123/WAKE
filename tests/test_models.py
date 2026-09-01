@@ -12,10 +12,11 @@ def test_free_air_uses_held_out_validation(tmp_path):
 
 def test_surface_model_trains_and_predicts():
     rng=np.random.default_rng(2);x=rng.normal(size=(300,13));nearby=(x[:,6]>.1).astype(float);distance=np.clip(.5-.1*x[:,6],.1,1);normals=np.tile([1.,0,0],(300,1))
-    artifact=train_surface_model(x[:220],nearby[:220],distance[:220],normals[:220],validation=(x[220:],nearby[220:],distance[220:],normals[220:]),dataset_ids=["a","b","c"],split_session_ids={"train":["a"],"validation":["b"],"test":["c"]},configuration_hash="hash")
+    artifact=train_surface_model(x[:220],nearby[:220],distance[:220],normals[:220],normals[:220],validation=(x[220:],nearby[220:],distance[220:],normals[220:],normals[220:]),dataset_ids=["a","b","c"],split_session_ids={"train":["a"],"validation":["b"],"test":["c"]},configuration_hash="hash")
     model=CalibratedSurfaceModel(artifact);features=x[np.argmax(x[:,6])];residual=AerodynamicResidual(features[:3],features[3:6],features[6],True,*features[7:13]);estimate=model.estimate(residual)
     assert estimate is not None and estimate.calibrated
     assert estimate.distance_sigma_m>0 and estimate.angular_sigma_rad>0
+    assert artifact.validation_metrics["recall_by_distance"]
 
 def test_residual_features_include_persistence():
     residual=AerodynamicResidual(np.zeros(3),np.zeros(3),1,True,1,.1,1,2,3,4)

@@ -1,7 +1,7 @@
 """OpenCV AprilTag localization with measured quality metrics and transforms."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass,replace
 from pathlib import Path
 import math
 import time
@@ -27,6 +27,8 @@ class AprilTagMetrics:
     angular_jump_deg: float = 0.0
     tracking_confidence: float = 0.0
     failure: str | None = "NO_TAG"
+    capture_latency_ms: float = 0.0
+    latency_calibrated: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,8 @@ class AprilTagPoseProvider:
         self.T_body_from_camera = _as_transform(transforms.get("T_body_from_camera"), "T_body_from_camera")
         self.calibration = CameraCalibration.load(camera["calibration_file"])
         self.width, self.height = int(camera["width"]), int(camera["height"])
+        self.capture_latency_ms = camera.get("capture_latency_ms")
+        self.buffer_size = int(camera.get("buffer_size",1))
         if (self.width, self.height) != (self.calibration.image_width, self.calibration.image_height):
             raise CameraConfigurationError("camera resolution differs from calibration")
         self.sequence = 0
@@ -104,6 +108,7 @@ class AprilTagPoseProvider:
         capture = cv2.VideoCapture(device)
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        capture.set(cv2.CAP_PROP_BUFFERSIZE,self.buffer_size)
         if not capture.isOpened():
             raise CameraConfigurationError(f"NO_CAMERA: device {device}")
         actual = (round(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), round(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
@@ -178,12 +183,15 @@ class AprilTagPoseProvider:
     def capture_frame(self) -> tuple[np.ndarray, PoseSample | None]:
         if self.capture is None:
             raise CameraConfigurationError("NO_CAMERA")
-        ok, frame = self.capture.read()
-        timestamp_ns = time.monotonic_ns()
+        grabbed=self.capture.grab();capture_return_ns=time.monotonic_ns()
+        ok,frame=self.capture.retrieve() if grabbed else (False,None)
         if not ok:
             self.metrics = AprilTagMetrics(failure="NO_CAMERA_FRAME")
             raise CameraConfigurationError("NO_CAMERA_FRAME")
-        return frame, self.process_frame(frame, timestamp_ns)
+        latency_ms=0.0 if self.capture_latency_ms is None else float(self.capture_latency_ms);timestamp_ns=capture_return_ns-round(latency_ms*1e6);pose=self.process_frame(frame,timestamp_ns);failure=self.metrics.failure
+        if self.capture_latency_ms is None and failure is None:failure="CAMERA_LATENCY_UNCALIBRATED"
+        self.metrics=replace(self.metrics,capture_latency_ms=latency_ms,latency_calibrated=self.capture_latency_ms is not None,failure=failure)
+        return frame,pose
 
     def capture_once(self) -> PoseSample | None:
         _, pose = self.capture_frame()

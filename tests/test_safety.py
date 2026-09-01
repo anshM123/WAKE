@@ -16,3 +16,9 @@ def test_unknown_space_speed_limit():
 
 def test_bad_clock_and_out_of_envelope_fail_closed():
     config={**CFG,"require_clock_sync":True,"max_clock_age_ms":3000,"require_operational_envelope":True};health=healthy();health.clock_model_age_ms=4000;health.clock_sync_confidence=0;health.model_in_operational_envelope=False;assert SafetySupervisor(config).evaluate(health).action==SafetyAction.HOLD
+
+def test_clock_confidence_and_residual_thresholds():
+    config={**CFG,"require_clock_sync":True,"max_clock_age_ms":3000,"minimum_clock_confidence":.5,"maximum_clock_residual_ms":2};health=healthy();health.clock_model_age_ms=1;health.clock_sync_confidence=.4;health.clock_residual_ms=.2;assert SafetySupervisor(config).evaluate(health).reason=="CLOCK_CONFIDENCE_LOW";health.clock_sync_confidence=.8;health.clock_residual_ms=3;assert SafetySupervisor(config).evaluate(health).reason=="CLOCK_RESIDUAL_HIGH"
+
+def test_distance_binned_recall_gates_safety():
+    config={**CFG,"detection_recall_min":.95};metrics={"recall_by_distance":[{"max_distance_m":.5,"recall":.8}]};assert SafetySupervisor(config).evaluate(healthy(),model_validation=metrics).action==SafetyAction.HOLD

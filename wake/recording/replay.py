@@ -17,6 +17,7 @@ from wake.mapping.evidence import MapEvidence
 from wake.mapping.export import export_json
 from wake.mapping.ray_fusion import fuse_surface_evidence
 from wake.mapping.voxel_map import SparseVoxelMap
+from wake.mapping.safe_corridor import mark_swept_corridor
 from wake.pose.transforms import quaternion_to_matrix
 from wake.protocol.messages import pose_from_mapping, telemetry_from_mapping
 from wake.telemetry.clock_sync import ClockExchange, ClockModel
@@ -87,6 +88,7 @@ class ReplayPipeline:
         self.residual = ResidualEstimator(config["filtering"]["persistence_samples"])
         self.feature_history: list[np.ndarray] = []
         self.motion=PoseMotionEstimator()
+        self.previous_corridor_position=None
 
     def synchronized_samples(self) -> Iterator[SynchronizedSample]:
         exchanges = self.session / "clock_exchange.jsonl"; poses = self.session / "filtered_pose.jsonl"; telemetry = self.session / "telemetry.jsonl"
@@ -113,7 +115,7 @@ class ReplayPipeline:
             observed = np.asarray([*sample.telemetry.accel_body_g, *sample.telemetry.gyro_body]); expected = self.free_air_model.predict(features); residual = self.residual.calculate(observed, expected, np.asarray(sample.telemetry.motors)); surface = self.surface_model.estimate(residual)
             self._safe_corridor(sample.pose.position_world_m)
             if surface and surface.calibrated:
-                direction = quaternion_to_matrix(sample.pose.rotation_world_from_body) @ np.asarray(surface.normal_body)
+                direction = quaternion_to_matrix(sample.pose.rotation_world_from_body) @ np.asarray(surface.direction_body)
                 fuse_surface_evidence(self.map, MapEvidence(sample.pose.position_world_m, tuple(direction.tolist()), surface.distance_m, surface.distance_sigma_m, surface.angular_sigma_rad, surface.confidence), surface.confidence >= .8,sample.pose.timestamp_ns); surface_count += 1
         if not self.free_air_model.calibrated: failures.append("MODEL_UNCALIBRATED: free-air")
         if not self.surface_model.calibrated: failures.append("MODEL_UNCALIBRATED: surface")
@@ -128,7 +130,6 @@ class ReplayPipeline:
         return expanded
 
     def _safe_corridor(self, position) -> None:
-        center=self.map.index(position)
-        for x in range(center[0]-1,center[0]+2):
-            for y in range(center[1]-1,center[1]+2):
-                for z in range(center[2]-1,center[2]+2): self.map.update((x,y,z),-.8,1.,timestamp_ns=1)
+        safety=self.config.get("safety",{});radius=safety.get("drone_radius_m");padding=safety.get("safe_corridor_padding_m")
+        if radius is None or padding is None:self.previous_corridor_position=position;return
+        start=self.previous_corridor_position or position;mark_swept_corridor(self.map,start,position,drone_radius_m=float(radius),safety_padding_m=float(padding),timestamp_ns=1);self.previous_corridor_position=position

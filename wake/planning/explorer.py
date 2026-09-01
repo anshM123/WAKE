@@ -21,7 +21,7 @@ class Explorer:
         health=observation.health
         if "EMERGENCY" in health.failure_modes:self.state=ExplorationState.EMERGENCY_STOP;return self.state
         if observation.pose is None or not health.tag_visible:self.state=ExplorationState.RELOCALIZE;return self.state
-        if health.clock_sync_confidence<=0 or health.clock_model_age_ms==float("inf"):self.state=ExplorationState.WAIT_FOR_CLOCK_SYNC;return self.state
+        if health.clock_sync_confidence<.5 or health.clock_model_age_ms==float("inf"):self.state=ExplorationState.WAIT_FOR_CLOCK_SYNC;return self.state
         if not health.model_calibrated or not health.model_in_operational_envelope:self.state=ExplorationState.WAIT_FOR_CALIBRATION;return self.state
         if observation.battery_return or observation.mission_complete:self.state=ExplorationState.RETURN_HOME;return self.state
         if self.home_pose is None:self.home_pose=observation.pose;self.home_timestamp=observation.pose.timestamp_ns;self.state=ExplorationState.LOCAL_SCAN
