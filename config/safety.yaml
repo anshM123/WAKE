@@ -15,3 +15,6 @@ reaction_time_s: 0.25
 maximum_deceleration_mps2: null # REQUIRED: experimentally measured
 drone_radius_m: null            # REQUIRED: measured with guards/props
 detection_recall_min: 0.95
+require_tag: true
+require_clock_sync: true
+require_operational_envelope: true

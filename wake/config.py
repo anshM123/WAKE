@@ -37,3 +37,18 @@ def validate_autonomy(wake_cfg: dict[str, Any], safety_cfg: dict[str, Any]) -> l
     if safety_cfg.get("maximum_deceleration_mps2") is None: reasons.append("maximum deceleration is unmeasured")
     if safety_cfg.get("drone_radius_m") is None: reasons.append("drone radius is unconfigured")
     return reasons
+
+def autonomy_blockers(wake_cfg:dict[str,Any],safety_cfg:dict[str,Any],camera_cfg:dict[str,Any],calibration_cfg:dict[str,Any],health:Any|None=None,model_metrics:dict[str,Any]|None=None)->list[str]:
+    reasons=validate_autonomy(wake_cfg,safety_cfg)
+    camera_file=Path(camera_cfg.get("camera",{}).get("calibration_file",""))
+    if not camera_file.exists():reasons.append("camera calibration is missing")
+    if camera_cfg.get("transforms",{}).get("T_world_from_tag") is None:reasons.append("T_world_from_tag is uncalibrated")
+    if camera_cfg.get("transforms",{}).get("T_body_from_camera") is None:reasons.append("T_body_from_camera is uncalibrated")
+    if not camera_cfg.get("frame_check_confirmed",False):reasons.append("WORLD frame motion check is unconfirmed")
+    if calibration_cfg.get("status")!="CALIBRATED":reasons.append("calibration status is not CALIBRATED")
+    if model_metrics is None or model_metrics.get("held_out_obstacle_recall",0)<safety_cfg.get("detection_recall_min",1):reasons.append("held-out obstacle recall is insufficient")
+    if health is not None:
+        if not health.tag_visible:reasons.append("tag is not currently healthy")
+        if health.clock_sync_confidence<=0:reasons.append("clock is not synchronized")
+        if not health.model_in_operational_envelope:reasons.append("current dynamics are outside the model envelope")
+    return sorted(set(reasons))
