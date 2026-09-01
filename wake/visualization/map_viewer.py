@@ -1,4 +1,5 @@
 def show_points(points):
+    """Small static inspection fallback; live operation uses LiveMapViewer."""
     try:import matplotlib.pyplot as plt
     except ImportError as exc:raise RuntimeError("install wake-mapper[science] for visualization") from exc
     axes=plt.figure().add_subplot(projection="3d");points=list(points)
