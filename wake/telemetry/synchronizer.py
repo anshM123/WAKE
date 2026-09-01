@@ -3,15 +3,24 @@ import time, numpy as np
 from wake.pose.transforms import slerp
 from wake.telemetry.buffers import TimestampBuffer
 from wake.types import PoseSample, SynchronizedSample, TelemetrySample
+from wake.telemetry.clock_sync import ClockModel
 
 class SynchronizationError(ValueError): pass
 
 class SampleSynchronizer:
-    def __init__(self, max_pose_gap_ms: float = 50.0, max_pose_age_ms: float = 100.0) -> None:
-        self.max_pose_gap_ms=max_pose_gap_ms; self.max_pose_age_ms=max_pose_age_ms; self.poses=TimestampBuffer(lambda p:p.timestamp_ns)
+    def __init__(self, max_pose_gap_ms: float = 50.0, max_pose_age_ms: float = 100.0, clock_model: ClockModel | None = None) -> None:
+        self.max_pose_gap_ms=max_pose_gap_ms; self.max_pose_age_ms=max_pose_age_ms; self.poses=TimestampBuffer(lambda p:p.timestamp_ns); self.clock_model=clock_model
     def add_pose(self, pose: PoseSample) -> None: self.poses.add(pose)
     def synchronize(self, telemetry: TelemetrySample, telemetry_timestamp_ns: int | None = None) -> SynchronizedSample:
-        target = telemetry.drone_timestamp_us*1000 if telemetry_timestamp_ns is None else telemetry_timestamp_ns
+        if telemetry_timestamp_ns is None:
+            if self.clock_model is None:
+                raise SynchronizationError("CLOCK_UNSYNCED")
+            try:
+                target = self.clock_model.to_host_ns(telemetry.drone_timestamp_us)
+            except RuntimeError as exc:
+                raise SynchronizationError(str(exc)) from exc
+        else:
+            target = telemetry_timestamp_ns
         pair=self.poses.bracket(target)
         if pair is None: raise SynchronizationError("pose does not bracket telemetry timestamp")
         before, after=pair; gap_ms=(after.timestamp_ns-before.timestamp_ns)/1e6

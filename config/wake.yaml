@@ -6,6 +6,7 @@ network:
   telemetry_port: 5005
   pose_port: 5006
   command_port: 5007
+  clock_port: 5008
 synchronization:
   max_pose_gap_ms: 50.0
   max_pose_age_ms: 100.0
