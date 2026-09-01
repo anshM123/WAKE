@@ -136,6 +136,8 @@ class WakeRuntime:
             status = self.clock_model.status()
             healthy = self.clock_model.healthy()
             self.recorder.record("clock", asdict(status))
+            if self.clock_model.samples:
+                self.recorder.record("clock_exchange", asdict(self.clock_model.samples[-1]))
             if healthy != was_healthy:
                 self.recorder.record("events", {"event": "CLOCK_SYNC_RECOVERED" if healthy else "CLOCK_SYNC_BAD", "monotonic_ns": time.monotonic_ns()})
             was_healthy = healthy

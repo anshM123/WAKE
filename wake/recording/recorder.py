@@ -7,7 +7,7 @@ from threading import Thread
 from typing import Any
 import json,shutil,subprocess
 
-STREAMS=("telemetry","pose","raw_pose","filtered_pose","clock","synchronized_samples","preprocessed_features","free_air_prediction","residual","surface_estimate","map_updates","health","events","commands")
+STREAMS=("telemetry","pose","raw_pose","filtered_pose","clock","clock_exchange","synchronized_samples","preprocessed_features","free_air_prediction","residual","surface_estimate","map_updates","health","events","commands")
 def _jsonable(value:Any)->Any:
     if is_dataclass(value):value=asdict(value)
     if isinstance(value,dict):return {k:_jsonable(v) for k,v in value.items()}
