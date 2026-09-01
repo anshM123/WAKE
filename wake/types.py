@@ -148,3 +148,16 @@ class SystemHealth:
     model_calibrated: bool = False
     disk_queue_depth: int = 0
     details: dict[str, Any] = field(default_factory=dict)
+    imu_hz: float = 0.0
+    motor_hz: float = 0.0
+    tag_visible: bool = False
+    reprojection_error_px: float = math.inf
+    clock_sync_rtt_ms: float = math.inf
+    clock_model_age_ms: float = math.inf
+    clock_sync_confidence: float = 0.0
+    synchronization_gap_ms: float = math.inf
+    estimator_latency_ms: float = math.inf
+    mapper_latency_ms: float = math.inf
+    ui_latency_ms: float = math.inf
+    model_in_operational_envelope: bool = False
+    failure_modes: list[str] = field(default_factory=list)
