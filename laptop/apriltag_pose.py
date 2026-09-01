@@ -33,7 +33,7 @@ def main():
     p.add_argument("--calibration", required=True, help="JSON camera intrinsics/distortion file")
     p.add_argument("--hub", default="127.0.0.1"); p.add_argument("--port", type=int, default=5006)
     p.add_argument("--drone-id", default="wake-01")
-    p.add_argument("--tag-size-m", type=float, default=0.0913, help="black tag detection square, not paper edge")
+    p.add_argument("--tag-size-m", type=float, default=0.200, help="black tag detection square, not paper edge")
     p.add_argument("--camera-offset-m", nargs=3, type=float, default=[0, 0, 0], metavar=("X","Y","Z"), help="camera position in drone body frame")
     p.add_argument("--show", action="store_true")
     a = p.parse_args()
@@ -44,7 +44,7 @@ def main():
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
     detector = cv2.aruco.ArucoDetector(dictionary, cv2.aruco.DetectorParameters())
     half = a.tag_size_m / 2
-    # OpenCV tag object points, origin at center. The supplied 91.3 mm is this square.
+    # OpenCV tag object points, origin at center. The supplied 200 mm is this square.
     object_points = np.array([[-half, half, 0], [half, half, 0], [half, -half, 0], [-half, -half, 0]], dtype=np.float64)
     udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     while True:

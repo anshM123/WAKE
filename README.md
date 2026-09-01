@@ -25,7 +25,7 @@ Before wiring, configure an unused Matrix UART for MSP at 115200 baud, confirm
 
 ## AprilTag initialization
 
-The initial reference is the supplied **tag36h11 ID 0** printed at **91.3 mm**
+The initial reference is the supplied **tag36h11 ID 0** printed at **200 mm**
 (the tag detection square, not its paper margin). `laptop/apriltag_pose.py`
 detects it with OpenCV, uses calibrated camera intrinsics to solve its pose in
 meters, and emits the existing WAKE `pose` UDP message on port 5006. The hub
