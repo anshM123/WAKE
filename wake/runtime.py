@@ -14,7 +14,7 @@ from wake.config import load_yaml
 from wake.estimation.features import instantaneous_features
 from wake.estimation.free_air import BaselineFreeAirModel, LearnedFreeAirModel
 from wake.estimation.residual import ResidualEstimator
-from wake.estimation.surface_model import BaselineSurfaceModel, SurfaceModel
+from wake.estimation.surface_model import BaselineSurfaceModel, CalibratedSurfaceModel, SurfaceModel
 from wake.mapping.evidence import MapEvidence
 from wake.mapping.export import export_json
 from wake.mapping.ray_fusion import fuse_surface_evidence
@@ -79,7 +79,11 @@ class WakeRuntime:
         self.recorder = SessionRecorder(self.config["recording"]["root"], int(self.config["recording"]["queue_size"]))
         self.free_air_model = self._load_free_air_model()
         self.surface_model: SurfaceModel = BaselineSurfaceModel()
+        surface_path = self.config["models"].get("surface_path")
+        if surface_path:
+            self.surface_model = CalibratedSurfaceModel.load(surface_path)
         self.residual_estimator = ResidualEstimator(int(self.config["filtering"]["persistence_samples"]))
+        self.feature_history: list[np.ndarray] = []
         self.threads: list[Thread] = []
         self._last_map_snapshot = 0.0
 
@@ -179,10 +183,12 @@ class WakeRuntime:
             except Empty:
                 continue
             started = time.perf_counter_ns()
-            features = instantaneous_features(sample)
+            base_features = instantaneous_features(sample)
+            self.feature_history = (self.feature_history + [base_features])[-10:]
+            features = self._free_air_features(base_features)
             observed = np.asarray([*sample.telemetry.accel_body_g, *sample.telemetry.gyro_body])
             expected = self.free_air_model.predict(features)
-            residual = self.residual_estimator.calculate(observed, expected)
+            residual = self.residual_estimator.calculate(observed, expected, np.asarray(sample.telemetry.motors))
             surface = self.surface_model.estimate(residual)
             self.recorder.record("preprocessed_features", features)
             self.recorder.record("free_air_prediction", expected)
@@ -193,6 +199,17 @@ class WakeRuntime:
             with self.health_lock:
                 self.health.estimator_latency_ms = (time.perf_counter_ns() - started) / 1e6
                 self.health.model_calibrated = self.free_air_model.calibrated and self.surface_model.calibrated
+                self.health.model_in_operational_envelope = bool(getattr(self.free_air_model,"in_operational_envelope",lambda _:False)(features)) and bool(getattr(self.surface_model,"last_in_envelope",False))
+
+    def _free_air_features(self,base:np.ndarray)->np.ndarray:
+        expected_length = len(getattr(getattr(self.free_air_model,"artifact",None),"features",base))
+        if expected_length == len(base):
+            return base
+        window=np.asarray(self.feature_history)
+        expanded=np.concatenate([window[-1],window.mean(axis=0),window.std(axis=0),window[-1]-window[0]])
+        if len(expanded)!=expected_length:
+            raise RuntimeError(f"free-air feature mismatch: model expects {expected_length}, runtime produced {len(expanded)}")
+        return expanded
 
     def _mapper_worker(self) -> None:
         while not self.stop_event.is_set():
