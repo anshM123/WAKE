@@ -3,3 +3,4 @@ __pycache__/
 *.py[cod]
 *.tmp
 wake_map.json
+config/camera_calibration.json

@@ -1,0 +1,5 @@
+{
+  "camera_matrix": [[1000.0, 0.0, 640.0], [0.0, 1000.0, 360.0], [0.0, 0.0, 1.0]],
+  "distortion_coefficients": [0.0, 0.0, 0.0, 0.0, 0.0],
+  "note": "Example only. Replace every value with a calibration for the exact webcam/XIAO camera and capture resolution used."
+}
