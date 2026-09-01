@@ -19,6 +19,9 @@ from wake.mapping.evidence import MapEvidence
 from wake.mapping.export import export_json
 from wake.mapping.ray_fusion import fuse_surface_evidence
 from wake.mapping.voxel_map import SparseVoxelMap
+from wake.mapping.planes import Plane, extract_planes
+from wake.mapping.mesh import export_obj, reconstruct_planar_mesh
+from wake.mapping.export import export_planes, export_ply
 from wake.pose.apriltag_pose import AprilTagPoseProvider
 from wake.pose.transforms import quaternion_to_matrix
 from wake.recording.recorder import SessionRecorder
@@ -40,6 +43,7 @@ class MapSnapshot:
     current_rotation: tuple[float, float, float, float] | None
     surface: SurfaceEstimate | None
     health: SystemHealth
+    planes: tuple[Plane, ...] = ()
 
 
 def _put_latest(queue: Queue, value: Any) -> None:
@@ -76,6 +80,7 @@ class WakeRuntime:
         self.pose_provider = AprilTagPoseProvider(self.camera_config) if enable_camera else None
         self.voxel_map = SparseVoxelMap(**{key: self.config["mapping"][key] for key in ("voxel_size_m", "log_odds_min", "log_odds_max")})
         self.trajectory: list[tuple[float, float, float]] = []
+        self.planes: list[Plane] = []
         self.recorder = SessionRecorder(self.config["recording"]["root"], int(self.config["recording"]["queue_size"]))
         self.free_air_model = self._load_free_air_model()
         self.surface_model: SurfaceModel = BaselineSurfaceModel()
@@ -111,6 +116,9 @@ class WakeRuntime:
             self.pose_provider.close()
         self.recorder.record("events", {"event": "SESSION_END", "monotonic_ns": time.monotonic_ns()})
         export_json(self.voxel_map, self.recorder.path / "final_map.json")
+        export_ply(self.voxel_map,self.recorder.path/"final_map.ply",float(self.config["mapping"]["occupied_threshold"]))
+        export_planes(self.planes,self.recorder.path/"planes.json")
+        export_obj(reconstruct_planar_mesh(self.planes,float(self.config["mapping"]["plane_min_confidence"])),self.recorder.path/"supported_surfaces.obj")
         self.recorder.close()
 
     def _telemetry_worker(self) -> None:
@@ -242,7 +250,7 @@ class WakeRuntime:
 
     def snapshot(self, pose, surface, health) -> MapSnapshot:
         voxels = tuple((index, voxel.occupancy_probability, voxel.confidence, voxel.observation_count) for index, voxel in self.voxel_map.voxels.items())
-        return MapSnapshot(time.monotonic_ns(), voxels, tuple(self.trajectory), pose.position_world_m, pose.rotation_world_from_body, surface, health)
+        return MapSnapshot(time.monotonic_ns(), voxels, tuple(self.trajectory), pose.position_world_m, pose.rotation_world_from_body, surface, health, tuple(self.planes))
 
     def _periodic_snapshot(self) -> None:
         interval = float(self.config["mapping"]["snapshot_interval_s"])
@@ -253,4 +261,8 @@ class WakeRuntime:
         directory.mkdir(exist_ok=True)
         count = len(list(directory.glob("map_snapshot_*.json"))) + 1
         export_json(self.voxel_map, directory / f"map_snapshot_{count:04d}.json")
+        occupied=[(tuple((axis+.5)*self.voxel_map.voxel_size_m for axis in index),voxel.confidence) for index,voxel in self.voxel_map.voxels.items() if voxel.occupancy_probability>=float(self.config["mapping"]["occupied_threshold"])]
+        if len(occupied)>=30:
+            self.planes=extract_planes(np.asarray([point for point,_ in occupied]),confidences=np.asarray([confidence for _,confidence in occupied]),minimum_support=30,distance_threshold_m=self.voxel_map.voxel_size_m*1.5)
+            export_planes(self.planes,directory/f"planes_{count:04d}.json")
         self._last_map_snapshot = now

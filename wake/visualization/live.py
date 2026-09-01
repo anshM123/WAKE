@@ -111,6 +111,7 @@ class LiveMapViewer:
         self.drone_item = self.gl.GLScatterPlotItem(size=13, color=(1, .25, .1, 1), pxMode=True); self.view.addItem(self.drone_item)
         self.heading_item = self.gl.GLLinePlotItem(color=(1, .2, .1, 1), width=3); self.view.addItem(self.heading_item)
         self.surface_item = self.gl.GLLinePlotItem(color=(1, .75, .1, .9), width=3); self.view.addItem(self.surface_item)
+        self.plane_items = []
 
     def _vector(self, x: float, y: float, z: float):
         from PySide6.QtGui import QVector3D
@@ -145,6 +146,15 @@ class LiveMapViewer:
             else:
                 self.surface_item.setData(pos=np.empty((0, 3)))
         self.status.setText(self._status_text(snapshot))
+        self._update_planes(snapshot.planes)
+
+    def _update_planes(self,planes)->None:
+        for item in self.plane_items:self.view.removeItem(item)
+        self.plane_items=[]
+        if not self.plane_toggle.isChecked():return
+        for plane in planes:
+            if plane.corners_world is None:continue
+            vertices=np.asarray(plane.corners_world,float);faces=np.asarray([[0,1,2],[0,2,3]],dtype=int);colors=np.tile([.2,.2,.25,.18*plane.confidence],(2,1));item=self.gl.GLMeshItem(vertexes=vertices,faces=faces,faceColors=colors,smooth=False,drawEdges=True,edgeColor=(.25,.25,.3,.4));self.view.addItem(item);self.plane_items.append(item)
 
     def _status_text(self, snapshot) -> str:
         h, s = snapshot.health, snapshot.surface
