@@ -4,6 +4,8 @@ from wake.protocol.sequence import SequenceTracker
 
 def packet():return {"protocol_version":2,"type":"telemetry","drone_id":"wake-01","sequence":1,"timestamp_us":10,"accel_body_g":[0,0,1],"gyro_body":[0,0,0],"attitude_rpy_rad":[0,0,0],"motors":[1000]*4,"battery_v":4.0,"validity":31}
 def test_valid_packet():assert telemetry_from_mapping(packet(),20).motors==(1000.,)*4
+def test_firmware_health_rates_are_retained():
+    value=packet();value["health"]={"imu_hz":98,"motor_hz":96};sample=telemetry_from_mapping(value,20);assert sample.source_health["imu_hz"]==98
 def test_missing_fields():
     value=packet();del value["motors"]
     with pytest.raises(ValueError,match="missing"):telemetry_from_mapping(value)

@@ -42,6 +42,11 @@ def autonomy_blockers(wake_cfg:dict[str,Any],safety_cfg:dict[str,Any],camera_cfg
     reasons=validate_autonomy(wake_cfg,safety_cfg)
     camera_file=Path(camera_cfg.get("camera",{}).get("calibration_file",""))
     if not camera_file.exists():reasons.append("camera calibration is missing")
+    else:
+        try:
+            camera_calibration=load_yaml(camera_file)
+            if any(camera_calibration.get(key) is None for key in ("image_width","image_height","camera_matrix","distortion_coefficients","mean_reprojection_error_px")):reasons.append("camera calibration is incomplete")
+        except (OSError,ValueError):reasons.append("camera calibration is invalid")
     if camera_cfg.get("transforms",{}).get("T_world_from_tag") is None:reasons.append("T_world_from_tag is uncalibrated")
     if camera_cfg.get("transforms",{}).get("T_body_from_camera") is None:reasons.append("T_body_from_camera is uncalibrated")
     if not camera_cfg.get("frame_check_confirmed",False):reasons.append("WORLD frame motion check is unconfirmed")

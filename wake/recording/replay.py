@@ -9,6 +9,7 @@ import time
 import numpy as np
 
 from wake.estimation.features import instantaneous_features
+from wake.estimation.motion import PoseMotionEstimator
 from wake.estimation.free_air import BaselineFreeAirModel, LearnedFreeAirModel
 from wake.estimation.residual import ResidualEstimator
 from wake.estimation.surface_model import BaselineSurfaceModel, CalibratedSurfaceModel
@@ -85,6 +86,7 @@ class ReplayPipeline:
         self.map = SparseVoxelMap(mapping["voxel_size_m"], mapping["log_odds_min"], mapping["log_odds_max"])
         self.residual = ResidualEstimator(config["filtering"]["persistence_samples"])
         self.feature_history: list[np.ndarray] = []
+        self.motion=PoseMotionEstimator()
 
     def synchronized_samples(self) -> Iterator[SynchronizedSample]:
         exchanges = self.session / "clock_exchange.jsonl"; poses = self.session / "filtered_pose.jsonl"; telemetry = self.session / "telemetry.jsonl"
@@ -107,12 +109,12 @@ class ReplayPipeline:
         for sample in self.synchronized_samples():
             if speed > 0 and previous_ns is not None: time.sleep(max(0, (sample.pose.timestamp_ns - previous_ns) / 1e9 / speed))
             previous_ns = sample.pose.timestamp_ns; synchronized_count += 1
-            base = instantaneous_features(sample); self.feature_history = (self.feature_history + [base])[-10:]; features = self._features(base)
+            base = instantaneous_features(sample,self.motion.update(sample.pose)); self.feature_history = (self.feature_history + [base])[-10:]; features = self._features(base)
             observed = np.asarray([*sample.telemetry.accel_body_g, *sample.telemetry.gyro_body]); expected = self.free_air_model.predict(features); residual = self.residual.calculate(observed, expected, np.asarray(sample.telemetry.motors)); surface = self.surface_model.estimate(residual)
             self._safe_corridor(sample.pose.position_world_m)
             if surface and surface.calibrated:
                 direction = quaternion_to_matrix(sample.pose.rotation_world_from_body) @ np.asarray(surface.normal_body)
-                fuse_surface_evidence(self.map, MapEvidence(sample.pose.position_world_m, tuple(direction.tolist()), surface.distance_m, surface.distance_sigma_m, surface.angular_sigma_rad, surface.confidence), surface.confidence >= .8); surface_count += 1
+                fuse_surface_evidence(self.map, MapEvidence(sample.pose.position_world_m, tuple(direction.tolist()), surface.distance_m, surface.distance_sigma_m, surface.angular_sigma_rad, surface.confidence), surface.confidence >= .8,sample.pose.timestamp_ns); surface_count += 1
         if not self.free_air_model.calibrated: failures.append("MODEL_UNCALIBRATED: free-air")
         if not self.surface_model.calibrated: failures.append("MODEL_UNCALIBRATED: surface")
         output_path = Path(output) if output else self.session / "replay_map.json"; export_json(self.map, output_path); canonical=json.dumps(json.loads(output_path.read_text()),sort_keys=True,separators=(",",":"));digest=hashlib.sha256(canonical.encode()).hexdigest()

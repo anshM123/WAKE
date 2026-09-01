@@ -24,6 +24,7 @@ def telemetry_from_mapping(message: dict[str, Any], received_ns: int | None = No
         motors_timestamp_us=_optional_int(message, "motors_timestamp_us"),
         attitude_timestamp_us=_optional_int(message, "attitude_timestamp_us"),
         battery_timestamp_us=_optional_int(message, "battery_timestamp_us"),
+        source_health={str(key): float(value) for key, value in message.get("health", {}).items()},
     )
 
 

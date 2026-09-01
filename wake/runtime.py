@@ -10,8 +10,9 @@ import time
 from typing import Any
 import numpy as np
 
-from wake.config import load_yaml
+from wake.config import autonomy_blockers,config_hash,load_yaml
 from wake.estimation.features import instantaneous_features
+from wake.estimation.motion import PoseMotionEstimator
 from wake.estimation.free_air import BaselineFreeAirModel, LearnedFreeAirModel
 from wake.estimation.residual import ResidualEstimator
 from wake.estimation.surface_model import BaselineSurfaceModel, CalibratedSurfaceModel, SurfaceModel
@@ -30,6 +31,7 @@ from wake.telemetry.receiver import TelemetryReceiver
 from wake.telemetry.synchronizer import SampleSynchronizer, SynchronizationError
 from wake.types import SurfaceEstimate, SystemHealth
 from wake.visualization.live import LatestOnlyQueue
+from wake.control.supervisor import SafetySupervisor
 
 LOG = logging.getLogger(__name__)
 
@@ -64,6 +66,11 @@ class WakeRuntime:
         self.config_path = config_path
         self.config = load_yaml(config_path)
         self.camera_config = load_yaml("config/camera.yaml")
+        if self.config.get("mode")=="AUTONOMOUS":
+            calibration=load_yaml("config/calibration.yaml");safety=load_yaml("config/safety.yaml");metrics=None;surface_path=self.config.get("models",{}).get("surface_path")
+            if surface_path and Path(surface_path).exists():metrics=__import__("json").loads(Path(surface_path).read_text(encoding="utf-8")).get("validation_metrics")
+            blockers=autonomy_blockers(self.config,safety,self.camera_config,calibration,model_metrics=metrics)
+            if blockers:raise RuntimeError("AUTONOMOUS BLOCKED:\n- "+"\n- ".join(blockers))
         network = self.config["network"]
         sync = self.config["synchronization"]
         self.stop_event = Event()
@@ -88,16 +95,24 @@ class WakeRuntime:
         if surface_path:
             self.surface_model = CalibratedSurfaceModel.load(surface_path)
         self.residual_estimator = ResidualEstimator(int(self.config["filtering"]["persistence_samples"]))
+        self.motion_estimator=PoseMotionEstimator()
+        self.safety_supervisor=SafetySupervisor(load_yaml("config/safety.yaml"))
         self.feature_history: list[np.ndarray] = []
         self.threads: list[Thread] = []
         self._last_map_snapshot = 0.0
+        self._last_safety_action: str | None = None
+        self._telemetry_rate_start=time.monotonic();self._telemetry_count=0;self._pose_rate_start=time.monotonic();self._pose_count=0
 
     def _load_free_air_model(self):
         path = self.config["models"].get("free_air_path")
         return LearnedFreeAirModel.load(path) if path else BaselineFreeAirModel()
 
     def start(self) -> None:
-        self.recorder.start({"software_version": "0.3.0", "drone_id": self.config["drone_id"], "mode": self.config["mode"]}, [self.config_path, "config/camera.yaml", "config/safety.yaml", "config/calibration.yaml"])
+        snapshots=[self.config_path,"config/camera.yaml","config/safety.yaml","config/calibration.yaml"]
+        if Path("config/reference_plane.yaml").exists():snapshots.append("config/reference_plane.yaml")
+        camera_calibration=load_yaml(self.camera_config["camera"]["calibration_file"]) if Path(self.camera_config["camera"]["calibration_file"]).exists() else {}
+        metadata={"software_version":"0.3.0","firmware_version":"0.3.0","drone_id":self.config["drone_id"],"mode":self.config["mode"],"tag_id":self.camera_config["tag"]["id"],"tag_size_m":self.camera_config["tag"]["size_m"],"camera_calibration_hash":config_hash(camera_calibration),"config_hash":config_hash(self.config,self.camera_config),"free_air_model_version":getattr(getattr(self.free_air_model,"artifact",None),"model_version","UNCALIBRATED"),"surface_model_version":getattr(getattr(self.surface_model,"artifact",None),"model_version","UNCALIBRATED")}
+        self.recorder.start(metadata, snapshots)
         self.recorder.record("events", {"event": "SESSION_START", "monotonic_ns": time.monotonic_ns()})
         targets = [self._telemetry_worker, self._clock_worker, self._sync_worker, self._estimator_worker, self._mapper_worker]
         if self.pose_provider is not None:
@@ -127,6 +142,17 @@ class WakeRuntime:
             if sample is None:
                 continue
             self.recorder.record("telemetry", sample)
+            self._telemetry_count+=1;elapsed=time.monotonic()-self._telemetry_rate_start
+            if elapsed>=1:
+                with self.health_lock:
+                    self.health.telemetry_hz=self._telemetry_count/elapsed
+                    self.health.imu_hz=sample.source_health.get("imu_hz",self.health.telemetry_hz)
+                    self.health.motor_hz=sample.source_health.get("motor_hz",self.health.telemetry_hz)
+                    self.health.dropped_packets=self.telemetry_receiver.dropped_packets
+                    self.health.reordered_packets=self.telemetry_receiver.reordered
+                    total=max(1,self._telemetry_count+self.telemetry_receiver.dropped_packets)
+                    self.health.details["packet_loss_percent"]=100*self.telemetry_receiver.dropped_packets/total
+                self._telemetry_count=0;self._telemetry_rate_start=time.monotonic()
             _put_latest(self.telemetry_queue, sample)
 
     def _clock_worker(self) -> None:
@@ -157,6 +183,10 @@ class WakeRuntime:
             if pose:
                 self.recorder.record("filtered_pose", pose)
                 self.synchronizer.add_pose(pose)
+                self._pose_count+=1;elapsed=time.monotonic()-self._pose_rate_start
+                if elapsed>=1:
+                    with self.health_lock:self.health.pose_hz=self._pose_count/elapsed
+                    self._pose_count=0;self._pose_rate_start=time.monotonic()
             visible = pose is not None
             if visible != had_pose:
                 self.recorder.record("events", {"event": "TAG_RECOVERED" if visible else "TAG_LOST", "monotonic_ns": time.monotonic_ns()})
@@ -193,13 +223,18 @@ class WakeRuntime:
             except Empty:
                 continue
             started = time.perf_counter_ns()
-            base_features = instantaneous_features(sample)
+            motion = self.motion_estimator.update(sample.pose)
+            base_features = instantaneous_features(sample,motion)
             self.feature_history = (self.feature_history + [base_features])[-10:]
             features = self._free_air_features(base_features)
             observed = np.asarray([*sample.telemetry.accel_body_g, *sample.telemetry.gyro_body])
             expected = self.free_air_model.predict(features)
             residual = self.residual_estimator.calculate(observed, expected, np.asarray(sample.telemetry.motors))
             surface = self.surface_model.estimate(residual)
+            decision=self.safety_supervisor.evaluate(self.health,surface,current_speed_mps=float(np.linalg.norm(motion.world_velocity_mps)),moving_into_unknown=True)
+            with self.health_lock:self.health.details["safety_action"]=decision.action.value;self.health.details["safety_reason"]=decision.reason
+            if decision.action.value!=self._last_safety_action and decision.action.value in {"CAUTION","HOLD","BACK_OFF","RETURN_HOME","LAND","EMERGENCY_STOP"}:self.recorder.record("events",{"event":f"SAFETY_{decision.action.value}","reason":decision.reason,"monotonic_ns":time.monotonic_ns()})
+            self._last_safety_action=decision.action.value
             self.recorder.record("preprocessed_features", features)
             self.recorder.record("free_air_prediction", expected)
             self.recorder.record("residual", residual)
@@ -235,7 +270,7 @@ class WakeRuntime:
                 rotation = quaternion_to_matrix(sample.pose.rotation_world_from_body)
                 direction = tuple((rotation @ np.asarray(surface.normal_body)).tolist())
                 evidence = MapEvidence(position, direction, surface.distance_m, surface.distance_sigma_m, surface.angular_sigma_rad, surface.confidence)
-                fuse_surface_evidence(self.voxel_map, evidence, allow_free_space=surface.confidence >= .8)
+                fuse_surface_evidence(self.voxel_map, evidence, allow_free_space=surface.confidence >= .8,timestamp_ns=sample.pose.timestamp_ns)
                 self.recorder.record("map_updates", evidence)
             with self.health_lock:
                 self.health.mapper_latency_ms = (time.perf_counter_ns() - started) / 1e6

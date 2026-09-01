@@ -5,7 +5,7 @@ from pathlib import Path
 from queue import Queue,Full
 from threading import Thread
 from typing import Any
-import json,shutil,subprocess
+import json,shutil,subprocess,platform,sys,time
 
 STREAMS=("telemetry","pose","raw_pose","filtered_pose","clock","clock_exchange","synchronized_samples","preprocessed_features","free_air_prediction","residual","surface_estimate","map_updates","health","events","commands")
 def _jsonable(value:Any)->Any:
@@ -20,7 +20,7 @@ class SessionRecorder:
     def __init__(self,root:str|Path="data/sessions",queue_size:int=10000)->None:
         stamp=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S");self.path=Path(root)/stamp;self.path.mkdir(parents=True,exist_ok=False);self.queue:Queue[tuple[str,Any]|None]=Queue(queue_size);self.dropped=0;self._worker=Thread(target=self._write_loop,daemon=True);self._worker.start()
     def start(self,metadata:dict[str,Any],config_paths:list[str|Path]=[])->None:
-        enriched={**metadata,"start_time":datetime.now(timezone.utc).isoformat(),"git_commit":self._git_commit()};(self.path/"metadata.json").write_text(json.dumps(_jsonable(enriched),indent=2),encoding="utf-8")
+        enriched={**metadata,"start_time":datetime.now(timezone.utc).isoformat(),"unix_start_time_ns":time.time_ns(),"git_commit":self._git_commit(),"host_platform":platform.platform(),"python_version":sys.version};(self.path/"metadata.json").write_text(json.dumps(_jsonable(enriched),indent=2),encoding="utf-8")
         snapshots=self.path/"config_snapshot";snapshots.mkdir()
         for source in config_paths:shutil.copy2(source,snapshots/Path(source).name)
     def record(self,stream:str,value:Any)->bool:
@@ -30,7 +30,7 @@ class SessionRecorder:
     def close(self)->None:
         self.queue.put(None);self._worker.join();metadata_path=self.path/"metadata.json"
         if metadata_path.exists():
-            metadata=json.loads(metadata_path.read_text(encoding="utf-8"));metadata["end_time"]=datetime.now(timezone.utc).isoformat();metadata["dropped_disk_records"]=self.dropped;metadata_path.write_text(json.dumps(metadata,indent=2),encoding="utf-8")
+            metadata=json.loads(metadata_path.read_text(encoding="utf-8"));metadata["end_time"]=datetime.now(timezone.utc).isoformat();metadata["unix_end_time_ns"]=time.time_ns();metadata["dropped_disk_records"]=self.dropped;metadata_path.write_text(json.dumps(metadata,indent=2),encoding="utf-8")
     def _write_loop(self)->None:
         handles={name:(self.path/f"{name}.jsonl").open("a",encoding="utf-8") for name in STREAMS}
         try:

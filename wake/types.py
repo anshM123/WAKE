@@ -64,6 +64,7 @@ class TelemetrySample:
     attitude_timestamp_us: int | None = None
     battery_timestamp_us: int | None = None
     host_timestamp_ns: int | None = None
+    source_health: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.drone_id: raise ValueError("drone_id is required")

@@ -16,7 +16,7 @@ class SampleSynchronizer:
             if self.clock_model is None:
                 raise SynchronizationError("CLOCK_UNSYNCED")
             try:
-                target = self.clock_model.to_host_ns(telemetry.drone_timestamp_us)
+                target = self.clock_model.to_host_ns(telemetry.imu_timestamp_us or telemetry.drone_timestamp_us)
             except RuntimeError as exc:
                 raise SynchronizationError(str(exc)) from exc
         else:

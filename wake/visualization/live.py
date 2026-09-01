@@ -177,7 +177,7 @@ Surface probability: {surface}
 
 Map voxels: {len(snapshot.voxels)}
 State: MANUAL_MAPPING
-Safety: {'HOLD' if failures != 'none' else 'MONITORING'}
+Safety: {h.details.get('safety_action', 'MONITORING')}
 
 Battery: {h.battery_v:.2f} V
 Failures: {failures}"""
