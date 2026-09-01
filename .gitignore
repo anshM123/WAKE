@@ -1,6 +1,9 @@
-work/
 __pycache__/
 *.py[cod]
-*.tmp
-wake_map.json
-config/camera_calibration.json
+.pytest_cache/
+.venv/
+*.egg-info/
+data/sessions/*
+!data/sessions/.gitkeep
+*.joblib
+*.npz

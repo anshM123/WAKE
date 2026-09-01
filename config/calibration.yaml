@@ -1,0 +1,6 @@
+status: UNCALIBRATED
+free_air_dataset_ids: []
+wall_dataset_ids: []
+known_wall_planes: []
+accel_bias_g: [0.0, 0.0, 0.0]
+gyro_bias: [0.0, 0.0, 0.0]

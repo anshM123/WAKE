@@ -1,0 +1,17 @@
+camera:
+  device: 0
+  calibration_file: config/camera.yaml
+  # Replace with measured intrinsics at the capture resolution.
+  matrix: null
+  distortion_coefficients: null
+tag:
+  family: tagStandard41h12
+  id: 0
+  size_m: null # REQUIRED: measured black detection square
+  max_reprojection_error_px: 2.0 # CALIBRATION_PLACEHOLDER
+  min_decision_margin: 20.0      # CALIBRATION_PLACEHOLDER
+  max_pose_jump_m: 0.25          # CALIBRATION_PLACEHOLDER
+transforms:
+  # Row-major homogeneous transforms. Identity means camera is WORLD for first experiments.
+  T_world_from_camera: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]
+  T_body_from_tag: [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]

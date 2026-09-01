@@ -1,0 +1,12 @@
+geofence: null # REQUIRED before AUTONOMOUS
+max_unknown_speed_mps: 0.10
+max_known_speed_mps: 0.30
+caution_distance_m: null   # REQUIRED: experimentally validated
+stop_distance_m: null      # REQUIRED: experimentally validated
+emergency_distance_m: null # REQUIRED: experimentally validated
+uncertainty_k: 2.0
+minimum_battery_v: null     # REQUIRED: battery-specific validation
+return_battery_v: null      # REQUIRED: battery-specific validation
+max_pose_age_ms: 100.0
+max_telemetry_age_ms: 100.0
+command_timeout_ms: 250.0
