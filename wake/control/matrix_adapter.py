@@ -9,3 +9,6 @@ class MatrixAdapter(FlightController):
     def hold(self)->None:self._disabled()
     def set_velocity_world(self,vx:float,vy:float,vz:float,yaw_rate:float)->None:self._disabled()
     def land(self)->None:self._disabled()
+
+    @property
+    def failure_mode(self)->str:return "FLIGHT_INTERFACE_DISABLED"
